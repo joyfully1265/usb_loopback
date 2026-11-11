@@ -10,6 +10,10 @@ Adjust `SCREEN_WIDTH` and `SCREEN_HEIGHT` (`client\io_interface.py`) for correct
 
 # Installation
 
+```
+pip install usb_loopback
+```
+
 ## Prerequisites
 
 ### Server

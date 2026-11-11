@@ -3,6 +3,7 @@
 Sends mouse actions and keystrokes from client to server using TCP sockets.
 
 The server writes HID report to USB device file descriptors.
+One way to set up the descriptors can be found [here](https://github.com/joyfully1265/usb_hid)
 
 Adjust SCREEN_WIDTH and SCREEN_HEIGHT (usb_loopback\client\io_interface.py) for correct mouse coordinate scaling.
 

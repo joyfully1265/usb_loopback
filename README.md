@@ -3,38 +3,89 @@
 Sends mouse actions and keystrokes from client to server using TCP sockets.
 
 The server writes HID report to USB device file descriptors.
-One way to set up the descriptors can be found [here](https://github.com/joyfully1265/usb_hid)
 
-Adjust SCREEN_WIDTH and SCREEN_HEIGHT (usb_loopback\client\io_interface.py) for correct mouse coordinate scaling.
+Adjust `SCREEN_WIDTH` and `SCREEN_HEIGHT` (`client\io_interface.py`) for correct mouse coordinate scaling.
 
-# Message formats
+![arch](docs/arch.png)
 
-The payloads follow HID mouse/keyboard aside from the initial msg_type byte.
+# Installation
 
-## Message struct
-| Byte Size | Description |
+## Prerequisites
+
+### Server
+
+[USB gadget file descriptors](
+https://github.com/joyfully1265/usb_hid.git) (`/dev/hidg0`, `/dev/hidg1` for keyboard, mouse, respsectively, by default)
+
+# Message protocol
+
+Each frame is a single `msg_type` byte followed by a fixed-size payload.
+The payload mirrors the HID report structure exactly; the only framing added by this protocol is the leading `msg_type` byte.
+
+
+| msg_type  | payload                  |
 | -- | -- |
-| 1 | msg_type |
-| variable | payload |
+| 1 byte    | 4, 6, or 8 bytes         |
 
-## msg_type
-| Name | Description |
-| -- | -- |
-| msg_type | 0 for keyboard, 1 for mouse |
+## Message structure
 
-## Mouse payload struct
+| Offset | Size | Field | Description |
+| --- | ---: | --- | --- |
+| 0 | 1 | `msg_type` | `0` = keyboard, `1` = relative mouse, `2` = absolute mouse |
+| 1 | variable | `payload` | Report body; length is determined by `msg_type` |
 
-| Byte Size | Description |
-| -- | -- |
-| 1 | 0x1 = left mouse button, 0x2 = right mouse button, 0x4 = middle mouse button |
-| 2 | x mouse coordinate (absolute), scaled from screen width to 0x7FFF |
-| 2 | y mouse coordinate (absolute), scaled from screen height to 0x7FFF |
-| 1 | scroll wheel (0) |
+## `msg_type` values
 
-## Keystroke payload struct
+| Value | Name | Size | Description |
+| ---: | --- | ---: | --- |
+| 0 | `KEYBOARD` | 8 bytes | HID keyboard report (modifiers, reserved, 6 keycodes) |
+| 1 | `MOUSE` | 4 bytes | Relative mouse movement / button state |
+| 2 | `MOUSE_ABS` | 6 bytes | Absolute cursor position / button state |
 
-| Byte Size | Description |
-| -- | -- |
-| 1 | Modifier mask |
-| 1 | Reserved (0) |
-| 6 | Key codes, 1 per byte |
+> The server logs and closes the connection on an unrecognized `msg_type`.
+
+## Keyboard payload (`msg_type = 0`)
+
+| Offset | Size | Field | Description |
+| --- | ---: | --- | --- |
+| 0 | 1 | `modifier_mask` | Bitmask of held modifier keys|
+| 1 | 1 | `reserved` | Always `0x00` |
+| 2 | 6 | `key_codes[0..5]` | Up to six HID usage IDs; `0x00` = unused slot |
+
+## Relative mouse payload (`msg_type = 1`)
+
+| Offset | Size | Field | Description |
+| --- | ---: | --- | --- |
+| 0 | 1 | `button_mask` | Button state bitmask (see below) |
+| 1 | 1 | `dx` | Relative X movement, `-127..127` |
+| 2 | 1 | `dy` | Relative Y movement, `-127..127` |
+| 3 | 1 | `wheel` | Scroll delta, `0` |
+
+## Absolute mouse payload (`msg_type = 2`)
+
+| Offset | Size | Field | Description |
+| --- | ---: | --- | --- |
+| 0 | 1 | `button_mask` | Button state bitmask (see below) |
+| 1 | 2 | `x` | Absolute X, `0..32767` |
+| 3 | 2 | `y` | Absolute Y, `0..32767` |
+| 5 | 1 | `wheel` | Scroll delta, `0` |
+
+Button-only updates (press/release without moving) are sent as `msg_type = 2` with `x = y = 0`.
+
+### Button bits (both mouse types)
+
+| Bit | Mask | Button |
+| ---: | ---: | --- |
+| 0 | `0x01` | Left |
+| 1 | `0x02` | Right |
+| 2 | `0x04` | Middle |
+
+## Coordinate scaling
+
+Screen coordinates are converted to the HID range `0..32767` (`0x7FFF`):
+
+```
+hid = int(screen_coord / resolution * 32767)
+```
+
+where `resolution` is `SCREEN_WIDTH` / `SCREEN_HEIGHT` from `client/io_interface.py`.
